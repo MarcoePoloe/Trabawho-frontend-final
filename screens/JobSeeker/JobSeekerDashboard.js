@@ -1,3 +1,4 @@
+// ... keep all your existing imports
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
@@ -11,7 +12,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   TextInput,
-  FlatList,
   Modal
 } from 'react-native';
 import { uploadFile } from '../../services/upload';
@@ -20,7 +20,6 @@ import { getRequest } from '../../services/api';
 import { getToken } from '../../services/Auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
-
 
 const ITEMS_PER_PAGE = 5;
 
@@ -35,15 +34,13 @@ const JobSeekerDashboard = ({ navigation, route }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [jobsPage, setJobsPage] = useState(1);
 
-  // Search and Filter States
+  // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [positionFilter, setPositionFilter] = useState('');
   const [locationFilter, setLocationFilter] = useState('');
   const [sortBy, setSortBy] = useState('created_on');
   const [sortOrder, setSortOrder] = useState('desc');
-  
-  // Dropdown states
-  const [showPositionDropdown, setShowPositionDropdown] = useState(false);
+
   const [showSortDropdown, setShowSortDropdown] = useState(false);
 
   useEffect(() => {
@@ -96,7 +93,9 @@ const JobSeekerDashboard = ({ navigation, route }) => {
     try {
       const res = await getRequest('/match-jobs', authToken);
       setMatches(res.data || []);
-    } catch (error) {} finally {
+    } catch (error) {
+      console.error('Error fetching matches:', error);
+    } finally {
       setLoadingMatches(false);
     }
   };
@@ -121,15 +120,13 @@ const JobSeekerDashboard = ({ navigation, route }) => {
 
   const topMatches = matches.slice(0, 3);
   const handleSearch = () => fetchAllJobs();
-  const handlePositionSelect = (position) => {
-    setPositionFilter(position);
-    setShowPositionDropdown(false);
-  };
+
   const handleSortSelect = (option) => {
     setSortBy(option.value);
     setSortOrder(option.order);
     setShowSortDropdown(false);
   };
+
   const clearAllFilters = () => {
     setSearchQuery('');
     setPositionFilter('');
@@ -142,15 +139,6 @@ const JobSeekerDashboard = ({ navigation, route }) => {
   const hasActiveFilters = () => {
     return searchQuery || positionFilter || locationFilter || sortBy !== 'created_on' || sortOrder !== 'desc';
   };
-
-  const positionOptions = [
-    { label: 'All Positions', value: '' },
-    { label: 'Full-time', value: 'full-time' },
-    { label: 'Part-time', value: 'part-time' },
-    { label: 'Contract', value: 'contract' },
-    { label: 'Internship', value: 'internship' },
-    { label: 'Remote', value: 'remote' },
-  ];
 
   const sortOptions = [
     { label: 'Newest', value: 'created_on', order: 'desc' },
@@ -192,7 +180,8 @@ const JobSeekerDashboard = ({ navigation, route }) => {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={80}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
         <Text style={styles.header}>Welcome, {name}</Text>
-{/* AI Job Matches Section */}
+
+        {/* AI Job Matches Section */}
         <View style={styles.card}>
           <View style={styles.titleRow}>
             <Text style={styles.cardTitle}>AI Job Matches</Text>
@@ -247,10 +236,11 @@ const JobSeekerDashboard = ({ navigation, route }) => {
             )}
           </View>
 
+          {/* Search Input */}
           <View style={styles.searchContainer}>
             <TextInput
               style={styles.searchInput}
-              placeholder="Search jobs, companies, locations..."
+              placeholder="Search jobs, companies, or keywords..."
               value={searchQuery}
               onChangeText={setSearchQuery}
               onSubmitEditing={handleSearch}
@@ -260,17 +250,18 @@ const JobSeekerDashboard = ({ navigation, route }) => {
             </TouchableOpacity>
           </View>
 
+          {/* Position and Location Inputs */}
           <View style={styles.filterRow}>
-            <TouchableOpacity
-              style={[styles.filterButton, positionFilter && styles.activeFilterButton]}
-              onPress={() => setShowPositionDropdown(true)}
-            >
-              <Ionicons name="briefcase-outline" size={16} color={positionFilter ? '#fff' : '#5271ff'} />
-              <Text style={[styles.filterText, positionFilter && styles.activeFilterText]}>
-                {positionFilter || 'Position'}
-              </Text>
-              <Ionicons name="chevron-down" size={14} color={positionFilter ? '#fff' : '#5271ff'} />
-            </TouchableOpacity>
+            <View style={styles.locationInputContainer}>
+              <Ionicons name="briefcase-outline" size={16} color="#5271ff" />
+              <TextInput
+                style={styles.locationInput}
+                placeholder="Position"
+                value={positionFilter}
+                onChangeText={setPositionFilter}
+                onSubmitEditing={handleSearch}
+              />
+            </View>
 
             <View style={styles.locationInputContainer}>
               <Ionicons name="location-outline" size={16} color="#5271ff" />
@@ -284,6 +275,7 @@ const JobSeekerDashboard = ({ navigation, route }) => {
             </View>
           </View>
 
+          {/* Sort Filter */}
           <View style={styles.sortRow}>
             <TouchableOpacity style={styles.filterButton} onPress={() => setShowSortDropdown(true)}>
               <Ionicons name="filter" size={16} color="#5271ff" />
@@ -294,57 +286,41 @@ const JobSeekerDashboard = ({ navigation, route }) => {
             </TouchableOpacity>
           </View>
 
+          {/* Job List */}
           {loadingJobs ? (
             <ActivityIndicator size="small" color="#5271ff" style={styles.loader} />
-          ) : paginatedJobs.length === 0 ? (
-            <Text style={styles.emptyText}>
-              {hasActiveFilters() ? 'No jobs found matching your filters' : 'No jobs available'}
-            </Text>
           ) : (
             <>
-              {paginatedJobs.map((item) => (
-                <TouchableOpacity
-                  key={item.job_id}
-                  onPress={() => navigation.navigate('JobDetails', { job: item })}
-                  style={styles.item}
-                >
-                  <Text style={styles.jobTitle}>{item.title}</Text>
-                  <Text style={styles.company}>{item.company}</Text>
-                  <Text style={styles.location}>{item.location}</Text>
-                  {item.position && <Text style={styles.position}>{item.position}</Text>}
-                </TouchableOpacity>
-              ))}
-
-              <View style={styles.pagination}>
-                <TouchableOpacity
-                  onPress={() => setJobsPage((p) => Math.max(p - 1, 1))}
-                  disabled={jobsPage === 1}
-                  style={styles.paginationButton}
-                >
-                  <Text style={styles.paginationButtonText}>← Previous</Text>
-                </TouchableOpacity>
-                <Text style={styles.pageText}>Page {jobsPage}</Text>
-                <TouchableOpacity
-                  onPress={() =>
-                    setJobsPage((p) => (p * ITEMS_PER_PAGE < allJobs.length ? p + 1 : p))
-                  }
-                  disabled={jobsPage * ITEMS_PER_PAGE >= allJobs.length}
-                  style={styles.paginationButton}
-                >
-                  <Text style={styles.paginationButtonText}>Next →</Text>
-                </TouchableOpacity>
-              </View>
+              {paginatedJobs.length === 0 ? (
+                <Text style={styles.emptyText}>
+                  {hasActiveFilters() ? 'No jobs found matching your filters' : 'No jobs available'}
+                </Text>
+              ) : (
+                <>
+                  {paginatedJobs.map((item) => (
+                    <TouchableOpacity
+                      key={item.job_id}
+                      onPress={() => navigation.navigate('JobDetails', { job: item })}
+                      style={styles.item}
+                    >
+                      <Text style={styles.jobTitle}>{item.title}</Text>
+                      <Text style={styles.company}>{item.company}</Text>
+                      <Text style={styles.location}>{item.location}</Text>
+                      {item.position && <Text style={styles.position}>{item.position}</Text>}
+                    </TouchableOpacity>
+                  ))}
+                </>
+              )}
             </>
           )}
         </View>
 
-        
-        {renderDropdown(showPositionDropdown, setShowPositionDropdown, positionOptions, handlePositionSelect, positionFilter)}
         {renderDropdown(showSortDropdown, setShowSortDropdown, sortOptions, handleSortSelect, null, true)}
       </ScrollView>
     </KeyboardAvoidingView>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {
@@ -563,6 +539,5 @@ const styles = StyleSheet.create({
   fontSize: 14,
   },
 });
-
 
 export default JobSeekerDashboard;

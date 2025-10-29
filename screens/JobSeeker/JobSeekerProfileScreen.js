@@ -23,9 +23,8 @@ import { getRequest, putWithAuth } from '../../services/api';
 import { uploadFile } from '../../services/upload';
 import { useNavigation } from '@react-navigation/native';
 
-
 export default function JobSeekerProfileScreen() {
-  const [profile, setProfile] = useState(null);
+  const [profile, setProfile] = useState({});
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState({});
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -41,22 +40,28 @@ export default function JobSeekerProfileScreen() {
   const fetchProfileData = useCallback(async () => {
     setRefreshing(true);
     try {
-      const meRes = await getRequest('/me');
-      const id =
-        meRes?.data?.job_seeker_id ||
-        meRes?.data?.employer_id ||
-        meRes?.data?.user_id ||
-        meRes?.data?.id;
+      // fetch current user (to validate token or role if needed)
+      const meRes = await getRequest('/me').catch(() => null);
+      // attempt to get profile info
+      const profileRes = await getRequest('/GetProfileInfo/me').catch(() => null);
+      const profileData = profileRes?.data ?? {};
 
-      const profileRes = await getRequest('/GetProfileInfo/me');
-      setProfile(profileRes.data || {});
-      setEditData(profileRes.data || {});
+      // safe resume check
+      const resumeRes = await getRequest('/resumes/me').catch(() => null);
+      const hasResume =
+        Boolean(resumeRes?.data?.has_resume) ||
+        Boolean(resumeRes?.data?.resume) ||
+        Boolean(resumeRes?.data?.signed_url);
 
-      const resumeRes = await getRequest('/resumes/me');
-      setResume(Boolean(resumeRes.data?.has_resume));
+      setProfile(profileData);
+      setEditData(profileData);
+      setResume(Boolean(hasResume));
     } catch (err) {
       console.error('❌ Error fetching profile data:', err);
       Toast.show({ type: 'error', text1: 'Failed to load profile' });
+      setProfile({});
+      setEditData({});
+      setResume(false);
     } finally {
       setRefreshing(false);
     }
@@ -67,7 +72,7 @@ export default function JobSeekerProfileScreen() {
   }, [fetchProfileData]);
 
   // upload profile photo
-  const handlePhotoChange = async () => {
+   const handlePhotoChange = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -90,9 +95,10 @@ export default function JobSeekerProfileScreen() {
       Toast.show({ type: 'success', text1: 'Profile photo updated!' });
       await fetchProfileData();
     } catch (err) {
-      console.error('❌ Photo upload failed:', err);
-      Toast.show({ type: 'error', text1: 'Photo upload failed' });
-    } finally {
+  console.log('❌ Photo upload failed:', JSON.stringify(err, Object.getOwnPropertyNames(err)));
+  // Toast.show({ type: 'error', text1: 'Photo upload failed' });
+}
+finally {
       setUploadingPhoto(false);
     }
   };
@@ -102,23 +108,26 @@ export default function JobSeekerProfileScreen() {
     try {
       setBusy(true);
       const token = await AsyncStorage.getItem('token');
-      if (!token) return Toast.show({ type: 'error', text1: 'Not authenticated' });
+      if (!token) {
+        Toast.show({ type: 'error', text1: 'Not authenticated' });
+        return;
+      }
 
       const fd = new FormData();
       const maybeAppend = (key, value) => {
         if (value !== undefined && value !== null && value !== '') fd.append(key, value);
       };
 
-      maybeAppend('name', editData.name);
-      maybeAppend('bio', editData.bio);
-      if (editData.birthdate) {
+      maybeAppend('name', editData?.name);
+      maybeAppend('bio', editData?.bio);
+      if (editData?.birthdate) {
         let bd = editData.birthdate;
         if (bd instanceof Date) bd = bd.toISOString().split('T')[0];
         maybeAppend('birthdate', bd);
       }
-      maybeAppend('location', editData.location);
-      maybeAppend('contact_info', editData.contact_info);
-      maybeAppend('contact_email', editData.contact_email);
+      maybeAppend('location', editData?.location);
+      maybeAppend('contact_info', editData?.contact_info);
+      maybeAppend('contact_email', editData?.contact_email);
 
       await putWithAuth('/PutProfileInfo', fd, token, true);
       Toast.show({ type: 'success', text1: 'Profile updated successfully!' });
@@ -136,11 +145,21 @@ export default function JobSeekerProfileScreen() {
   const handleUploadResume = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: 'application/pdf' });
-      if (result.canceled || !result.assets?.length) return;
+
+      // DocumentPicker returns { type: 'success'|'cancel', uri, name, size }
+      if (!result || result.type !== 'success') return;
 
       setUploadingResume(true);
-      const file = result.assets[0];
-      await uploadFile(file);
+
+      // document picker returns uri and name; adapt to your uploadFile implementation
+      // uploadFile should accept an object with { uri, name, mimeType? }
+      const fileObj = {
+        uri: result.uri,
+        name: result.name || 'resume.pdf',
+        type: 'application/pdf',
+      };
+
+      await uploadFile(fileObj);
       Toast.show({ type: 'success', text1: 'Resume uploaded successfully!' });
       await fetchProfileData();
     } catch (err) {
@@ -154,8 +173,18 @@ export default function JobSeekerProfileScreen() {
   const handleViewResume = async () => {
     try {
       const res = await getRequest('/resumes/me');
-      const url = res.data?.resume?.url || res.data?.signed_url;
-      if (!url) return Toast.show({ type: 'info', text1: 'No resume available' });
+      // backend may return different shapes - try several
+      const url =
+        res?.data?.resume?.url ||
+        res?.data?.signed_url ||
+        res?.data?.url ||
+        (res?.data?.resume && (res.data.resume.url || res.data.resume.signed_url));
+
+      if (!url) {
+        Toast.show({ type: 'info', text1: 'No resume available' });
+        return;
+      }
+
       await WebBrowser.openBrowserAsync(url);
     } catch (err) {
       console.error('❌ View resume failed:', err);
@@ -168,6 +197,7 @@ export default function JobSeekerProfileScreen() {
     navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
   };
 
+  // Render loading if profile hasn't loaded yet — but we ensure profile is an object
   if (!profile) {
     return (
       <View style={styles.centered}>
@@ -175,6 +205,10 @@ export default function JobSeekerProfileScreen() {
       </View>
     );
   }
+
+  // safe accessor helpers
+  const safe = (val, fallback = '') => (val !== undefined && val !== null ? val : fallback);
+  const profilePhotoUri = safe(profile.photo_url, null);
 
   return (
     <ScrollView
@@ -194,88 +228,72 @@ export default function JobSeekerProfileScreen() {
         {/* Profile Header Section */}
         <View style={styles.headerSection}>
           <View style={styles.photoContainer}>
-            <TouchableOpacity onPress={() => setShowImageModal(true)}>
+            <TouchableOpacity onPress={() => profilePhotoUri && setShowImageModal(true)}>
               {uploadingPhoto ? (
                 <View style={styles.loadingPhotoContainer}>
                   <ActivityIndicator size="large" color="#5271ff" />
                 </View>
+              ) : profilePhotoUri ? (
+                <Image source={{ uri: profilePhotoUri }} style={styles.profilePhoto} />
               ) : (
-                <Image source={{ uri: profile.photo_url }} style={styles.profilePhoto} />
+                // Placeholder circle with initials or icon
+                <View style={[styles.profilePhoto, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#eef4ff' }]}>
+                  <Text style={{ color: '#5271ff', fontWeight: '700', fontSize: 28 }}>
+                    {((profile?.name || '').split(' ').map(s => s[0]).slice(0,2).join('')) || 'JS'}
+                  </Text>
+                </View>
               )}
             </TouchableOpacity>
+
             <TouchableOpacity style={styles.editIconContainer} onPress={handlePhotoChange}>
               <MaterialIcons name="edit" size={20} color="#5271ff" />
             </TouchableOpacity>
           </View>
 
           <View style={styles.nameRow}>
-            <Text style={styles.name}>{profile.name || 'Unnamed'}</Text>
-            
+            <Text style={styles.name}>{safe(profile.name, 'Unnamed')}</Text>
           </View>
 
-          <Text style={styles.bio}>{profile.bio || 'No bio yet.'}</Text>
+          <Text style={styles.bio}>{safe(profile.bio, 'No bio yet.')}</Text>
         </View>
 
         {/* Profile Information Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Profile Information</Text>
-          
+
           <View style={styles.infoGrid}>
             <View style={styles.infoItem}>
               <Text style={styles.infoLabel}>Home Address</Text>
-              <Text style={styles.infoText}>{profile.location || 'Not specified'}</Text>
+              <Text style={styles.infoText}>{safe(profile.location, 'Not specified')}</Text>
             </View>
-            
+
             <View style={styles.infoItem}>
               <Text style={styles.infoLabel}>Date of Birth</Text>
-              <Text style={styles.infoText}>{profile.birthdate || 'Not specified'}</Text>
+              <Text style={styles.infoText}>{safe(profile.birthdate, 'Not specified')}</Text>
             </View>
-            
+
             <View style={styles.infoItem}>
               <Text style={styles.infoLabel}>Contact Info</Text>
-              <Text style={styles.infoText}>{profile.contact_info || 'Not specified'}</Text>
+              <Text style={styles.infoText}>{safe(profile.contact_info, 'Not specified')}</Text>
             </View>
-            
+
             <View style={styles.infoItem}>
               <Text style={styles.infoLabel}>Email Address</Text>
-              <Text style={styles.infoText}>{profile.contact_email || 'Not specified'}</Text>
+              <Text style={styles.infoText}>{safe(profile.contact_email, 'Not specified')}</Text>
             </View>
 
-            <TouchableOpacity style={styles.editProfileButton} onPress={() => setEditing(true)}>
-                            <MaterialIcons name="edit" size={18} color="#fff" />
-                            <Text style={styles.editProfileButtonText}>Edit Profile</Text>
-                          </TouchableOpacity>
+            <TouchableOpacity style={styles.editProfileButton} onPress={() => { setEditing(true); setEditData(profile || {}); }}>
+              <MaterialIcons name="edit" size={18} color="#fff" />
+              <Text style={styles.editProfileButtonText}>Edit Profile</Text>
+            </TouchableOpacity>
           </View>
         </View>
-
-        {/* Resume Section */}
-        {/* <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Resume</Text>
-          {uploadingResume ? (
-            <ActivityIndicator size="small" color="#5271ff" />
-          ) : resume ? (
-            <View style={styles.resumeButtons}>
-              <TouchableOpacity style={styles.primaryButton} onPress={handleViewResume}>
-                <Text style={styles.primaryButtonText}>View Resume</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.outlineButton} onPress={handleUploadResume}>
-                <Text style={styles.outlineButtonText}>Upload New Resume</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity style={styles.primaryButton} onPress={handleUploadResume}>
-              <Text style={styles.primaryButtonText}>Upload Resume</Text>
-            </TouchableOpacity>
-          )}
-        </View> */}
-
-       
-       
       </View>
-      
+
       <Text style={styles.space}></Text>
+
       <View style={styles.card}>
-            <View style={styles.section}>
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>Resume</Text>
           {uploadingResume ? (
             <ActivityIndicator size="small" color="#5271ff" />
@@ -295,16 +313,18 @@ export default function JobSeekerProfileScreen() {
           )}
         </View>
       </View>
-
 
       {/* Fullscreen photo view */}
       <Modal visible={showImageModal} transparent animationType="fade">
         <View style={styles.imageModalContainer}>
-          <TouchableOpacity
-            style={styles.imageModalBackdrop}
-            onPress={() => setShowImageModal(false)}
-          />
-          <Image source={{ uri: profile.photo_url }} style={styles.imageModalPhoto} />
+          <TouchableOpacity style={styles.imageModalBackdrop} onPress={() => setShowImageModal(false)} />
+          {profilePhotoUri ? (
+            <Image source={{ uri: profilePhotoUri }} style={styles.imageModalPhoto} />
+          ) : (
+            <View style={[styles.imageModalPhoto, { justifyContent: 'center', alignItems: 'center' }]}>
+              <Text style={{ color: '#fff' }}>No photo</Text>
+            </View>
+          )}
         </View>
       </Modal>
 
@@ -317,13 +337,13 @@ export default function JobSeekerProfileScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="Name"
-                value={editData.name}
+                value={editData?.name ?? ''}
                 onChangeText={(t) => setEditData({ ...editData, name: t })}
               />
               <TextInput
                 style={[styles.input, styles.textArea]}
                 placeholder="Bio"
-                value={editData.bio}
+                value={editData?.bio ?? ''}
                 onChangeText={(t) => setEditData({ ...editData, bio: t })}
                 multiline
               />
@@ -332,12 +352,12 @@ export default function JobSeekerProfileScreen() {
                   style={styles.input}
                   placeholder="Birthdate"
                   editable={false}
-                  value={editData.birthdate || ''}
+                  value={editData?.birthdate ?? ''}
                 />
               </TouchableOpacity>
               {showDatePicker && (
                 <DateTimePicker
-                  value={editData.birthdate ? new Date(editData.birthdate) : new Date()}
+                  value={editData?.birthdate ? new Date(editData.birthdate) : new Date()}
                   mode="date"
                   display="default"
                   onChange={(e, selectedDate) => {
@@ -353,19 +373,19 @@ export default function JobSeekerProfileScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="Location"
-                value={editData.location}
+                value={editData?.location ?? ''}
                 onChangeText={(t) => setEditData({ ...editData, location: t })}
               />
               <TextInput
                 style={styles.input}
                 placeholder="Contact Info"
-                value={editData.contact_info}
+                value={editData?.contact_info ?? ''}
                 onChangeText={(t) => setEditData({ ...editData, contact_info: t })}
               />
               <TextInput
                 style={styles.input}
                 placeholder="Contact Email"
-                value={editData.contact_email}
+                value={editData?.contact_email ?? ''}
                 onChangeText={(t) => setEditData({ ...editData, contact_email: t })}
               />
 
@@ -409,21 +429,21 @@ const styles = StyleSheet.create({
     position: 'relative', // Added for absolute positioning of settings button
   },
   editProfileButton: {
-  backgroundColor: '#5271ff',
-  paddingVertical: 10,
-  paddingHorizontal: 20,
-  borderRadius: 8,
-  marginTop: 10,
-  alignSelf: 'center',
-  flexDirection: 'row',
-  alignItems: 'center',
-  gap: 8,
-},
-editProfileButtonText: {
-  color: '#fff',
-  fontSize: 16,
-  fontWeight: '600',
-},
+    backgroundColor: '#5271ff',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    marginTop: 10,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  editProfileButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   settingsButton: {
     position: 'absolute',
     top: 15,

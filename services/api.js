@@ -29,6 +29,8 @@ export async function postRequest(endpoint, data, useFormData = false) {
       },
     });
   }
+console.log("🚀 Sending POST to:", endpoint);
+console.log("🧾 Data:", data);
 
   return api.post(endpoint, data, { headers });
 }

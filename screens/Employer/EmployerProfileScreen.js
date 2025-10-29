@@ -82,9 +82,10 @@ export default function EmployerProfileScreen() {
       Toast.show({ type: 'success', text1: 'Profile photo updated!' });
       await fetchProfileData();
     } catch (err) {
-      console.error('❌ Photo upload failed:', err);
-      Toast.show({ type: 'error', text1: 'Photo upload failed' });
-    } finally {
+  console.log('❌ Photo upload failed:', JSON.stringify(err, Object.getOwnPropertyNames(err)));
+  Toast.show({ type: 'error', text1: 'Photo upload failed' });
+}
+finally {
       setUploadingPhoto(false);
     }
   };
@@ -132,7 +133,7 @@ export default function EmployerProfileScreen() {
   if (!profile) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#4A6FA5" />
+        <ActivityIndicator size="large" color="#5271ff" />
       </View>
     );
   }
@@ -149,7 +150,7 @@ export default function EmployerProfileScreen() {
           style={styles.settingsButton}
           activeOpacity={0.8}
         >
-          <MaterialIcons name="settings" size={26} color="#4A6FA5" />
+          <MaterialIcons name="settings" size={26} color="#5271ff" />
         </TouchableOpacity>
 
         
@@ -159,14 +160,14 @@ export default function EmployerProfileScreen() {
     <TouchableOpacity onPress={() => setShowImageModal(true)}>
       {uploadingPhoto ? (
         <View style={styles.loadingPhotoContainer}>
-          <ActivityIndicator size="large" color="#4A6FA5" />
+          <ActivityIndicator size="large" color="#5271ff" />
         </View>
       ) : (
         <Image source={{ uri: profile.photo_url }} style={styles.profilePhoto} />
       )}
     </TouchableOpacity>
     <TouchableOpacity style={styles.editIconContainer} onPress={handlePhotoChange}>
-      <MaterialIcons name="edit" size={20} color="#4A6FA5" />
+      <MaterialIcons name="edit" size={20} color="#5271ff" />
     </TouchableOpacity>
   </View>
 
@@ -331,7 +332,7 @@ const styles = StyleSheet.create({
     padding: 5,
   },
   editProfileButton: {
-  backgroundColor: '#4A6FA5',
+  backgroundColor: '#5271ff',
   paddingVertical: 10,
   paddingHorizontal: 20,
   borderRadius: 8,
@@ -364,7 +365,7 @@ editProfileButtonText: {
     height: 130,
     borderRadius: 65,
     borderWidth: 2,
-    borderColor: '#4A6FA5',
+    borderColor: '#5271ff',
   },
   loadingPhotoContainer: {
     width: 130,
@@ -382,7 +383,7 @@ editProfileButtonText: {
     borderRadius: 20,
     padding: 6,
     borderWidth: 2,
-    borderColor: '#4A6FA5',
+    borderColor: '#5271ff',
     elevation: 3,
   },
   nameRow: {
@@ -421,7 +422,7 @@ editProfileButtonText: {
   infoLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#4A6FA5',
+    color: '#5271ff',
     marginBottom: 4,
   },
   infoText: {
@@ -494,7 +495,7 @@ editProfileButtonText: {
     textAlignVertical: 'top',
   },
   saveButton: {
-    backgroundColor: '#4A6FA5',
+    backgroundColor: '#5271ff',
     padding: 15,
     borderRadius: 8,
     alignItems: 'center',
@@ -511,7 +512,7 @@ editProfileButtonText: {
     padding: 12,
   },
   cancelText: {
-    color: '#4A6FA5',
+    color: '#5271ff',
     fontSize: 16,
     fontWeight: '600',
   },
