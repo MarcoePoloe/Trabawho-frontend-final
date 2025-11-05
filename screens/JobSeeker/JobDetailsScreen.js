@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { 
-  View, 
-  Text, 
-  ScrollView, 
+import {
+  View,
+  Text,
+  ScrollView,
   StyleSheet,
   TouchableOpacity,
   Alert,
@@ -15,7 +15,6 @@ import { useIsFocused } from '@react-navigation/native';
 import MapView, { Marker } from 'react-native-maps';
 import { Linking, Platform } from 'react-native';
 
-
 const JobDetailsScreen = ({ navigation, route }) => {
   const { job } = route.params || {};
   const [hasApplied, setHasApplied] = useState(false);
@@ -24,7 +23,7 @@ const JobDetailsScreen = ({ navigation, route }) => {
   const [loadingJustification, setLoadingJustification] = useState(false);
   const [applicationId, setApplicationId] = useState(null);
   const isFocused = useIsFocused();
-  
+
   const fetchApplicationStatus = async () => {
     try {
       const token = await AsyncStorage.getItem('token');
@@ -32,16 +31,16 @@ const JobDetailsScreen = ({ navigation, route }) => {
         setHasApplied(false);
         return;
       }
-      
+
       setLoading(true);
       const response = await getRequest('/applications/me', token);
       const applications = response.data?.applications || [];
-      
+
       const existingApp = applications.find(app => app.job.job_id === job.job_id);
       if (existingApp) {
         setHasApplied(true);
         setApplicationId(existingApp.application_id);
-     
+
       } else {
         setHasApplied(false);
         setApplicationId(null);
@@ -54,57 +53,200 @@ const JobDetailsScreen = ({ navigation, route }) => {
     }
   };
 
+  // NEW: Updated justify match function with all required parameters
   const handleJustifyMatch = async () => {
-  if (!job?.job_id || !job?.match_percentage) return;
+    if (!job?.job_id || !job?.match_percentage) return;
 
-  try {
-    setLoadingJustification(true);
-    const token = await AsyncStorage.getItem('token');
-    const response = await postRequest(
-      '/ai/justify-match',
-      { job_id: job.job_id, rating: job.match_percentage },
-      token
+    try {
+      setLoadingJustification(true);
+      const token = await AsyncStorage.getItem('token');
+
+      // NEW: Prepare all required parameters for the updated endpoint
+      const requestData = {
+        job_id: job.job_id,
+        rating: job.match_percentage,
+        semantic_score: job.semantic_score ?? 0,
+        skill_overlap: job.skill_overlap ?? 0,
+        proximity_score: job.proximity_score ?? 0,
+        distance_km: job.distance_km ?? 0,
+        resume_skills: job.extracted_resume_skills ?? [],
+        job_skills: job.extracted_job_skills ?? []
+      };
+
+      console.log("Sending justify match request:", requestData);
+
+      const response = await postRequest(
+        '/ai/justify-match-new',
+        requestData,
+        token
+      );
+
+      // NEW: Store the complete justification response
+      setJustification(response.data);
+    } catch (error) {
+      console.error('Error fetching justification:', error);
+      Alert.alert('Error', 'Failed to get AI justification.');
+    } finally {
+      setLoadingJustification(false);
+    }
+  };
+
+  // NEW: Function to render skills overlap section
+  const renderSkillsOverlap = () => {
+    if (!justification?.skills_overlapped && !justification?.missing_skills) {
+      return null;
+    }
+
+    return (
+      <View style={styles.skillsSection}>
+        <Text style={styles.skillsTitle}>Skills Analysis</Text>
+
+        {/* Skills Overlap */}
+        {justification.skills_overlapped && justification.skills_overlapped.length > 0 && (
+          <View style={styles.skillsList}>
+            <Text style={styles.skillsSubtitle}>✅ Matching Skills:</Text>
+            {justification.skills_overlapped.map((skill, index) => (
+              <View key={index} style={styles.skillItem}>
+                <Text style={styles.skillText}>• {skill}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Missing Skills */}
+        {justification.missing_skills && justification.missing_skills.length > 0 && (
+          <View style={styles.skillsList}>
+            <Text style={styles.skillsSubtitle}>⚠️ Missing Skills:</Text>
+            {justification.missing_skills.map((skill, index) => (
+              <View key={index} style={styles.skillItem}>
+                <Text style={styles.missingSkillText}>• {skill}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
     );
+  };
 
-    // Expecting { justification: "..." }
-    setJustification(response.data?.justification || 'No justification provided.');
-  } catch (error) {
-    console.error('Error fetching justification:', error);
-    Alert.alert('Error', 'Failed to get AI justification.');
-  } finally {
-    setLoadingJustification(false);
-  }
-};
+  // NEW: Function to render combined justifications
+  const renderCombinedJustification = () => {
+    if (!justification) return null;
 
+    const parts = [];
 
+    if (justification.semantic_justification) {
+      parts.push(justification.semantic_justification);
+    }
+
+    if (justification.skills_justification) {
+      parts.push(justification.skills_justification);
+    }
+
+    if (justification.proximity_justification) {
+      parts.push(justification.proximity_justification);
+    }
+
+    if (parts.length === 0) return null;
+
+    return (
+      <View style={styles.justificationSection}>
+        <Text style={styles.justificationTitle}>Match Breakdown</Text>
+        <Text style={styles.combinedJustification}>
+          {parts.join(' ')}
+        </Text>
+      </View>
+    );
+  };
+
+  // NEW: Function to render match score breakdown
+  const renderScoreBreakdown = () => {
+    if (!justification || !job) return null;
+
+    return (
+      <View style={styles.scoreBreakdown}>
+        <Text style={styles.scoreTitle}>Score Breakdown</Text>
+
+        <View style={styles.scoreRow}>
+          <Text style={styles.scoreLabel}>Content Relevance:</Text>
+          <Text style={styles.scoreValue}>{((job.semantic_score || 0) * 100).toFixed(1)}%</Text>
+        </View>
+
+        <View style={styles.scoreRow}>
+          <Text style={styles.scoreLabel}>Skills Alignment:</Text>
+          <Text style={styles.scoreValue}>{((job.skill_overlap || 0) * 100).toFixed(1)}%</Text>
+        </View>
+
+        <View style={styles.scoreRow}>
+          <Text style={styles.scoreLabel}>Job Distance:</Text>
+          <Text style={styles.scoreValue}>{((job.proximity_score || 0) * 100).toFixed(1)}%</Text>
+        </View>
+
+        <View style={styles.scoreDivider} />
+
+        <View style={styles.scoreRow}>
+          <Text style={styles.finalScoreLabel}>Overall Match:</Text>
+          <Text style={styles.finalScoreValue}>{justification.match_percentage}%</Text>
+        </View>
+
+        <Text style={styles.calculationNote}>
+          Calculation: (Resume × 40%) + (Skills × 50%) + (Location × 10%)
+        </Text>
+      </View>
+    );
+  };
+
+  const renderSkillChips = (label, skills, color) => !!skills?.length && (
+    <View style={styles.skillSection}>
+      <Text style={styles.skillCategory}>{label}</Text>
+      <View style={styles.skillWrap}>
+        {skills.map((s, i) => (
+          <View key={i} style={[styles.skillChip, { backgroundColor: color }]}>
+            <Text style={styles.skillChipText}>{s}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+
+  const ScoreBar = ({ label, value }) => {
+    const pct = ((value ?? 0) * 100).toFixed(1);
+    return (
+      <View style={styles.scoreItem}>
+        <Text style={styles.scoreLabel}>{label}: {pct}%</Text>
+        <View style={styles.scoreBarBackground}>
+          <View style={[styles.scoreBarFill, { width: `${pct}%` }]} />
+        </View>
+      </View>
+    );
+  };
 
   useEffect(() => {
     if (isFocused && job?.job_id) {
       fetchApplicationStatus();
+      console.log("PASSED DETAILS", job);
     }
   }, [job, isFocused]);
 
   const handleApply = () => {
-  if (hasApplied) {
-    // Navigate to the application details screen with existing data
-    navigation.navigate('ApplicationDetails', { 
-      application: {
-        application_id: applicationId,
-        job_id: job.job_id,
-        status: 'Submitted', // <-- Temporary status for new applications
-        job: {
-          title: job.title,
-          company: job.company,
-          location: job.location
+    if (hasApplied) {
+      // Navigate to the application details screen with existing data
+      navigation.navigate('ApplicationDetails', {
+        application: {
+          application_id: applicationId,
+          job_id: job.job_id,
+          status: 'Submitted', // <-- Temporary status for new applications
+          job: {
+            title: job.title,
+            company: job.company,
+            location: job.location
+          }
         }
-      }
-    });
-  } else {
-    // Go to the application form screen
-    navigation.navigate('ApplicationForm', { job });
-  }
+      });
+    } else {
+      // Go to the application form screen
+      navigation.navigate('ApplicationForm', { job });
+    }
   };
-
 
   // Set the header title to the job title
   useEffect(() => {
@@ -139,7 +281,7 @@ const JobDetailsScreen = ({ navigation, route }) => {
           >
             <Text style={styles.company}>{job.company}</Text>
           </TouchableOpacity>
-          
+
           <View style={styles.locationContainer}>
             <MaterialIcons name="location-on" size={16} color="#666" />
             <Text style={styles.location}>{job.location}</Text>
@@ -151,102 +293,106 @@ const JobDetailsScreen = ({ navigation, route }) => {
               <Text style={styles.matchText}>AI Match: {job.match_percentage}%</Text>
             </View>
           )}
-
-          
         </View>
 
-         {/* Map Location Section */}
-{job.latitude && job.longitude ? (
-  <View style={styles.section}>
-    <Text style={styles.sectionTitle}>Job Location</Text>
-
-    <View style={{ height: 260, borderRadius: 8, overflow: 'hidden', marginTop: 10 }}>
-      <MapView
-        style={{ flex: 1 }}
-        initialRegion={{
-          latitude: job.latitude,
-          longitude: job.longitude,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
-        }}
-        scrollEnabled={true}   // ✅ allow moving map
-        zoomEnabled={true}     // ✅ allow zoom
-        pitchEnabled={true}
-        rotateEnabled={true}
-        showsCompass={true}
-        showsScale={true}
-      >
-        <Marker coordinate={{ latitude: job.latitude, longitude: job.longitude }} />
-      </MapView>
-    </View>
-
-    {/* Open in Maps */}
-    <TouchableOpacity
-      onPress={() => {
-        const url = Platform.select({
-          ios: `http://maps.apple.com/?daddr=${job.latitude},${job.longitude}`,
-          android: `geo:${job.latitude},${job.longitude}?q=${job.latitude},${job.longitude}`,
-        });
-        Linking.openURL(url);
-      }}
-    >
-      <Text style={{ marginTop: 8, color: '#5271ff', fontWeight: '600' }}>
-        Open in Maps
-      </Text>
-    </TouchableOpacity>
-  </View>
-) : (
-  <View style={styles.section}>
-    <Text style={styles.sectionTitle}>Job Location</Text>
-    <Text style={{ color: '#777' }}>Location not available</Text>
-  </View>
-)}
-   
-
-
-
-        <View style={styles.header}>
-
-          {job.match_percentage && (
+        {/* Map Location Section */}
+        {job.latitude && job.longitude ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>AI Explanation</Text>
+            <Text style={styles.sectionTitle}>Job Location</Text>
+
+            <View style={{ height: 260, borderRadius: 8, overflow: 'hidden', marginTop: 10 }}>
+              <MapView
+                style={{ flex: 1 }}
+                initialRegion={{
+                  latitude: job.latitude,
+                  longitude: job.longitude,
+                  latitudeDelta: 0.01,
+                  longitudeDelta: 0.01,
+                }}
+                scrollEnabled={true}   // ✅ allow moving map
+                zoomEnabled={true}     // ✅ allow zoom
+                pitchEnabled={true}
+                rotateEnabled={true}
+                showsCompass={true}
+                showsScale={true}
+              >
+                <Marker coordinate={{ latitude: job.latitude, longitude: job.longitude }} />
+              </MapView>
+            </View>
+
+            {/* Open in Maps */}
+            <TouchableOpacity
+              onPress={() => {
+                const url = Platform.select({
+                  ios: `http://maps.apple.com/?daddr=${job.latitude},${job.longitude}`,
+                  android: `geo:${job.latitude},${job.longitude}?q=${job.latitude},${job.longitude}`,
+                });
+                Linking.openURL(url);
+              }}
+            >
+              <Text style={{ marginTop: 8, color: '#5271ff', fontWeight: '600' }}>
+                Open in Maps
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Job Location</Text>
+            <Text style={{ color: '#777' }}>Location not available</Text>
+          </View>
+        )}
+
+        {/* Divider between Map and AI Insights */}
+        <View style={styles.divider} />
+
+        {/* ✅ Match Breakdown */}
+        {job.match_percentage && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>AI Match Insights</Text>
 
             {!justification ? (
-              <TouchableOpacity
-                style={styles.justifyButton}
-                onPress={handleJustifyMatch}
-                disabled={loadingJustification}
-              >
-                {loadingJustification ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.justifyButtonText}>Justify Match</Text>
-                )}
+              <TouchableOpacity style={styles.analyzeBtn} onPress={handleJustifyMatch}>
+                {loadingJustification
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.analyzeText}>Analyze Match</Text>}
               </TouchableOpacity>
             ) : (
-              <View style={styles.justificationBox}>
-                <Text style={styles.justificationText}>{justification}</Text>
-              </View>
+              <>
+                <ScoreBar label="Content Relevance" value={job.semantic_score} />
+                <ScoreBar label="Skill Alignment" value={job.skill_overlap} />
+                <ScoreBar label="Location Fit" value={job.proximity_score} />
+
+                <Text style={styles.aiText}>{justification.semantic_justification}</Text>
+                <Text style={styles.aiText}>{justification.skills_justification}</Text>
+                <Text style={styles.aiText}>{justification.proximity_justification}</Text>
+
+                {renderSkillChips("Matched Skills", justification.skills_overlapped, "#DFFFE0")}
+                {renderSkillChips("Missing Skills", justification.missing_skills, "#FFE5E5")}
+
+                <TouchableOpacity style={styles.refreshBtn} onPress={handleJustifyMatch}>
+                  <Text style={styles.refreshText}>Refresh Analysis</Text>
+                </TouchableOpacity>
+              </>
             )}
           </View>
         )}
-        </View> 
+
+        {/* Divider between AI Insights and Job Details - Only show when there are AI insights */}
+        {job.match_percentage && <View style={styles.divider} />}
 
         <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Position: { }
+            <Text style={styles.description}>{job.position ? job.position : 'not provided'}
+            </Text>
+          </Text>
 
-          <Text style={styles.sectionTitle}>Position: { } 
-              <Text style={styles.description}>{job.position ? job.position : 'not provided'}
-                </Text> 
-              </Text>
-              
-          <Text style={styles.sectionTitle}>Salary: { } 
-              <Text style={styles.description}>{job.salary ? job.salary : 'not provided'}
-                </Text> 
-              </Text>
+          <Text style={styles.sectionTitle}>Salary: { }
+            <Text style={styles.description}>{job.salary ? job.salary : 'not provided'}
+            </Text>
+          </Text>
 
           <Text style={styles.sectionTitle}>Job Description</Text>
           <Text style={styles.description}>{job.description}</Text>
-
         </View>
 
         {job.requirements && (
@@ -257,7 +403,7 @@ const JobDetailsScreen = ({ navigation, route }) => {
         )}
 
         <View style={styles.applyContainer}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[
               styles.applyButton,
               hasApplied && styles.appliedButton
@@ -273,7 +419,7 @@ const JobDetailsScreen = ({ navigation, route }) => {
               </Text>
             )}
           </TouchableOpacity>
-          
+
           {hasApplied && (
             <View style={styles.appliedMessage}>
               <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
@@ -365,13 +511,6 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 10
   },
-  sectionTitleAI: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 10,
-    textAlign: 'center'
-  },
   description: {
     fontSize: 16,
     lineHeight: 24,
@@ -407,28 +546,140 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   justifyButton: {
-  backgroundColor: '#5271ff',
-  padding: 12,
-  borderRadius: 8,
-  alignItems: 'center',
-  marginTop: 10,
-},
-justifyButtonText: {
-  color: '#fff',
-  fontWeight: '600',
-},
-justificationBox: {
-  backgroundColor: '#f0f4fa',
-  padding: 12,
-  borderRadius: 8,
-  marginTop: 10,
-},
-justificationText: {
-  fontSize: 15,
-  color: '#333',
-  lineHeight: 22,
-},
+    backgroundColor: '#5271ff',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  justifyButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
 
+  // NEW: Styles for the enhanced justification display
+  justificationContainer: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    padding: 0,
+  },
+  justificationSection: {
+    marginBottom: 20,
+  },
+  justificationTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+  },
+  combinedJustification: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#444',
+  },
+  skillsSection: {
+    marginBottom: 20,
+  },
+  skillsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 12,
+  },
+  skillsSubtitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+  },
+  skillsList: {
+    marginBottom: 12,
+  },
+  skillItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  skillText: {
+    fontSize: 14,
+    color: '#2E7D32',
+    marginLeft: 4,
+  },
+  missingSkillText: {
+    fontSize: 14,
+    color: '#D32F2F',
+    marginLeft: 4,
+  },
+  scoreBreakdown: {
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  scoreTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 10,
+  },
+  scoreRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  scoreLabel: {
+    fontSize: 14,
+    color: '#666',
+  },
+  scoreValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#5271ff',
+  },
+  refreshButton: {
+    padding: 10,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  refreshButtonText: {
+    color: '#5271ff',
+    fontWeight: '600',
+  },
+  analyzeBtn: { backgroundColor: '#5271ff', padding: 10, borderRadius: 8 },
+  analyzeText: { color: '#fff', textAlign: 'center', fontWeight: '600' },
+  aiText: { marginTop: 8, fontSize: 14, color: '#444' },
+  scoreItem: { marginVertical: 6 },
+  scoreLabel: { fontWeight: '600', marginBottom: 4 },
+  scoreBarBackground: { height: 6, backgroundColor: '#eee', borderRadius: 4 },
+  scoreBarFill: { height: 6, backgroundColor: '#5271ff', borderRadius: 4 },
+  skillSection: { marginTop: 10 },
+  skillCategory: { fontWeight: '600', marginBottom: 4 },
+  skillWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  skillChip: { paddingVertical: 5, paddingHorizontal: 8, borderRadius: 6 },
+  skillChipText: { fontSize: 12, fontWeight: '600' },
+  refreshBtn: {
+    borderWidth: 1,
+    borderColor: '#5271ff',
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 10
+  },
+  refreshText: { textAlign: 'center', color: '#5271ff', fontWeight: '600' },
+  description: { color: '#444', marginTop: 6 },
+  applyBtn: {
+    marginTop: 20,
+    padding: 14,
+    backgroundColor: '#28a745',
+    borderRadius: 8
+  },
+  // NEW: Divider style
+  divider: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+    marginBottom: 25,
+  },
 });
 
 export default JobDetailsScreen;

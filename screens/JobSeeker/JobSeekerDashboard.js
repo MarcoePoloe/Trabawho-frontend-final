@@ -164,7 +164,7 @@ const JobSeekerDashboard = ({ navigation, route }) => {
       const res = await getRequest(url, authToken);
 
       // Defensive logging of the full response
-      console.log("FULL JOB RESPONSE:", res?.data);
+      // console.log("FULL JOB RESPONSE:", res?.data);
 
       // Accept either { jobs: [...] } or an array directly
       const jobs = res?.data?.jobs ?? res?.data ?? [];
@@ -210,16 +210,26 @@ const JobSeekerDashboard = ({ navigation, route }) => {
 
 
   const fetchMatches = async (authToken) => {
-    setLoadingMatches(true);
-    try {
-      const res = await getRequest('/match-jobs', authToken);
-      setMatches(res.data || []);
-    } catch (error) {
-      console.error('Error fetching matches:', error);
-    } finally {
-      setLoadingMatches(false);
+  setLoadingMatches(true);
+  try {
+    let url = '/match-jobs';
+
+    // ✅ append user coords if available
+    if (userLat && userLon) {
+      url += `?lat=${userLat}&lon=${userLon}`;
     }
-  };
+
+    const res = await getRequest(url, authToken);
+    setMatches(res.data || []);
+    
+    console.log("AI Matches fetched:", res.data?.[0]);
+  } catch (error) {
+    console.error('Error fetching matches:', error);
+  } finally {
+    setLoadingMatches(false);
+  }
+};
+
 
   const topMatches = matches.slice(0, 3);
   const handleSearch = () => fetchAllJobs();
@@ -312,16 +322,22 @@ const JobSeekerDashboard = ({ navigation, route }) => {
               {topMatches.map((job) => (
                 <TouchableOpacity
                   key={job.job_id}
-                  onPress={() => navigation.navigate('JobDetails', { job })}
+                  onPress={() => navigation.navigate('JobDetails', { job})}
                   style={styles.item}
                 >
                   <Text style={styles.jobTitle}>{job.title}</Text>
                   <Text style={styles.company}>{job.company}</Text>
-                  {job.match_percentage && (
-                    <View style={styles.matchContainer}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    {job.match_percentage != null && (
                       <Text style={styles.matchPercentage}>{job.match_percentage}% Match</Text>
-                    </View>
-                  )}
+                    )}
+
+                    {job.distance_km != null && (
+                      <Text style={styles.distance}>
+                        • {job.distance_km.toFixed(1)} km away
+                      </Text>
+                    )}
+                  </View>
                 </TouchableOpacity>
               ))}
             </>
